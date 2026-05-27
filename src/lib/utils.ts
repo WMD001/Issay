@@ -54,3 +54,9 @@ export function extractCustomLabels(labels: string[]): string[] {
   const systemLabels = new Set(['shuoshuo', 'draft']);
   return labels.filter(l => !systemLabels.has(l.toLowerCase()));
 }
+
+/** 判断是否为管理员 */
+export function isAdmin(login?: string | null): boolean {
+  if (!login) return false;
+  return login === process.env.GITHUB_OWNER;
+}
