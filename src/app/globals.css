@@ -1,3 +1,17 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:is(.dark *));
+
+/* Markdown prose styles */
+.prose img {
+  border-radius: 0.5rem;
+}
+
+.prose pre {
+  border-radius: 0.5rem;
+}
+
+.prose code {
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.25rem;
+}
