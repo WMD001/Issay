@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const comment = await createComment(issueId, body, extSession.accessToken);
+    const comment = await createComment(issueId, body);
     return NextResponse.json(comment, { status: 201 });
   } catch (error: any) {
     return NextResponse.json(
@@ -79,7 +79,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    await addReaction(targetId, content, extSession.accessToken, isComment);
+    await addReaction(targetId, content, undefined, isComment);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(

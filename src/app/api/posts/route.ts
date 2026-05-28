@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     const labels = ['shuoshuo'];
     if (isDraft) labels.push('draft');
 
-    const post = await createPost(title, body, labels, extSession.accessToken);
+    const post = await createPost(title, body, labels);
     return NextResponse.json(post, { status: 201 });
   } catch (error: any) {
     return NextResponse.json(

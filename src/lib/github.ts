@@ -29,13 +29,14 @@ async function githubFetch(
     ...options,
     headers: {
       'Accept': 'application/vnd.github.v3+json',
-      'Authorization': `token ${authToken}`,
+      'Authorization': `Bearer ${authToken}`,
       ...options.headers,
     },
   });
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
+    console.error('[githubFetch] error:', res.status, error);
     throw new Error(`GitHub API error: ${res.status} - ${error.message || 'Unknown'}`);
   }
 
@@ -108,7 +109,7 @@ export async function createPost(
   title: string,
   body: string,
   labels: string[],
-  token: string
+  token?: string
 ): Promise<Post> {
   const repo = getRepo();
   const res = await githubFetch(
@@ -128,7 +129,7 @@ export async function createPost(
 export async function updatePost(
   id: number,
   data: { title?: string; body?: string; labels?: string[] },
-  token: string
+  token?: string
 ): Promise<Post> {
   const repo = getRepo();
   const res = await githubFetch(
@@ -145,7 +146,7 @@ export async function updatePost(
 }
 
 /** 关闭说说（软删除） */
-export async function closePost(id: number, token: string): Promise<void> {
+export async function closePost(id: number, token?: string): Promise<void> {
   const repo = getRepo();
   await githubFetch(
     `/repos/${repo}/issues/${id}`,
@@ -190,7 +191,7 @@ export async function getComments(
 export async function createComment(
   issueId: number,
   body: string,
-  token: string
+  token?: string
 ): Promise<Comment> {
   const repo = getRepo();
   const res = await githubFetch(
@@ -223,7 +224,7 @@ export async function createComment(
 export async function addReaction(
   issueId: number,
   content: string,
-  token: string,
+  token?: string,
   isComment = false
 ): Promise<void> {
   const repo = getRepo();

@@ -64,11 +64,19 @@ export async function POST(request: NextRequest) {
     const filename = `${Date.now()}-${file.name}`;
     const path = `uploads/${filename}`;
 
+    const serverToken = process.env.GITHUB_TOKEN;
+    if (!serverToken) {
+      return NextResponse.json(
+        { error: 'GITHUB_TOKEN is not configured' },
+        { status: 500 }
+      );
+    }
+
     const res = await fetch(`${GITHUB_API}/repos/${repo}/contents/${path}`, {
       method: 'PUT',
       headers: {
         'Accept': 'application/vnd.github.v3+json',
-        'Authorization': `token ${extSession.accessToken}`,
+        'Authorization': `Bearer ${serverToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({

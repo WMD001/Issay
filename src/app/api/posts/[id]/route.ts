@@ -40,7 +40,7 @@ export async function PATCH(
     }
 
     const data = await request.json();
-    const post = await updatePost(parseInt(id, 10), data, extSession.accessToken);
+    const post = await updatePost(parseInt(id, 10), data);
     return NextResponse.json(post);
   } catch (error: any) {
     return NextResponse.json(
@@ -64,7 +64,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    await closePost(parseInt(id, 10), extSession.accessToken);
+    await closePost(parseInt(id, 10));
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(
