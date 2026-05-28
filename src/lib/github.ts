@@ -49,7 +49,7 @@ function issueToPost(issue: any): Post {
     id: issue.number,
     title: issue.title || '',
     body: issue.body || '',
-    summary: issue.title || extractSummary(issue.body || ''),
+    summary: extractSummary(issue.body || ''),
     labels,
     isDraft: hasLabel(labels, 'draft'),
     createdAt: issue.created_at,
@@ -66,10 +66,11 @@ function issueToPost(issue: any): Post {
   };
 }
 
-/** 获取说说列表（分页，排除草稿） */
+/** 获取说说列表（分页，默认排除草稿） */
 export async function getPosts(
   page = 1,
-  perPage = 10
+  perPage = 10,
+  includeDraft = false
 ): Promise<PaginatedResponse<Post>> {
   const repo = getRepo();
   const res = await githubFetch(
@@ -82,7 +83,7 @@ export async function getPosts(
 
   const posts = issues
     .filter((i: any) => !i.pull_request)
-    .filter((i: any) => !hasLabel(i.labels.map((l: any) => l.name), 'draft'))
+    .filter((i: any) => includeDraft || !hasLabel(i.labels.map((l: any) => l.name), 'draft'))
     .map(issueToPost);
 
   return {

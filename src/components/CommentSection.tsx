@@ -69,7 +69,7 @@ export default function CommentSection({ issueId }: CommentSectionProps) {
                 alt={comment.author.login}
                 width={32}
                 height={32}
-                className="rounded-full mt-1"
+                className="rounded-full mt-1 self-start flex-shrink-0"
               />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
@@ -105,7 +105,7 @@ export default function CommentSection({ issueId }: CommentSectionProps) {
             alt={session.user?.name || ''}
             width={32}
             height={32}
-            className="rounded-full mt-1"
+            className="rounded-full mt-1 self-start flex-shrink-0"
           />
           <div className="flex-1">
             <textarea

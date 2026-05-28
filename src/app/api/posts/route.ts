@@ -5,17 +5,28 @@ import { getPosts, searchPosts, createPost } from '@/lib/github';
 import { isAdmin } from '@/lib/utils';
 import { ExtendedSession } from '@/types';
 
-/** GET /api/posts?page=1&keyword=xxx&label=xxx */
+/** GET /api/posts?page=1&keyword=xxx&label=xxx&includeDraft=true */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1', 10);
     const keyword = searchParams.get('keyword') || undefined;
     const label = searchParams.get('label') || undefined;
+    const includeDraft = searchParams.get('includeDraft') === 'true';
+
+    // includeDraft 仅管理员可用
+    let showDraft = false;
+    if (includeDraft) {
+      const session = await getServerSession(authOptions);
+      const extSession = session as ExtendedSession | null;
+      if (extSession?.accessToken && isAdmin(extSession.user?.login)) {
+        showDraft = true;
+      }
+    }
 
     const result = keyword
       ? await searchPosts(keyword, label, page)
-      : await getPosts(page);
+      : await getPosts(page, 10, showDraft);
 
     return NextResponse.json(result);
   } catch (error: any) {
