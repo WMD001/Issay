@@ -57,7 +57,8 @@ export function extractCustomLabels(labels: string[]): string[] {
 
 /** 判断是否为管理员 */
 export function isAdmin(login?: string | null): boolean {
-  console.log(process.env.GITHUB_OWNER, login);
   if (!login) return false;
-  return login.toLowerCase() === (process.env.GITHUB_OWNER || '').toLowerCase();
+  const owner = process.env.GITHUB_OWNER;
+  if (!owner) return false;
+  return login.toLowerCase() === owner.toLowerCase();
 }

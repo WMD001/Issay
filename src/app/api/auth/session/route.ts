@@ -10,7 +10,9 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    session,
+    session: {
+      user: session.user,
+    },
     isAdmin: isAdmin((session as any).user?.login),
   });
 }
