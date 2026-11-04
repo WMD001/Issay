@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { isAdmin } from '@/lib/utils';
-import { ExtendedSession } from '@/types';
 
 const ALLOWED_TYPES = [
   'image/png',
@@ -11,17 +10,29 @@ const ALLOWED_TYPES = [
   'image/webp',
   'image/svg+xml',
 ];
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_SIZE = 4 * 1024 * 1024; // 4MB，低于 Vercel 4.5MB 请求体上限
 
 const GITHUB_API = 'https://api.github.com';
+
+function sanitizeFilename(name: string): string {
+  const dot = name.lastIndexOf('.');
+  const base = dot > 0 ? name.slice(0, dot) : name;
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : 'png';
+  const safeBase =
+    base.replace(/[^\w.-]+/g, '_').replace(/_+/g, '_').slice(0, 60) || 'image';
+  const safeExt = ext.replace(/[^a-z0-9]/g, '') || 'png';
+  return `${safeBase}.${safeExt}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Internal Server Error';
+}
 
 /** POST /api/upload — 上传图片（仅管理员） */
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    const extSession = session as ExtendedSession | null;
-
-    if (!extSession?.accessToken || !isAdmin(extSession.user?.login)) {
+    if (!isAdmin(session?.user?.login)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -32,15 +43,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'file is required' }, { status: 400 });
     }
 
-    // Validate file size
     if (file.size > MAX_SIZE) {
       return NextResponse.json(
-        { error: 'File size must be <= 10MB' },
+        { error: 'File size must be <= 4MB' },
         { status: 400 }
       );
     }
 
-    // Validate file type
     if (!ALLOWED_TYPES.includes(file.type)) {
       return NextResponse.json(
         { error: 'Invalid file type. Allowed: png, jpeg, gif, webp, svg' },
@@ -48,35 +57,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert to base64
+    const repo = process.env.GITHUB_REPO;
+    const serverToken = process.env.GITHUB_TOKEN;
+    if (!repo || !serverToken) {
+      return NextResponse.json(
+        { error: 'GitHub storage is not configured' },
+        { status: 500 }
+      );
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const base64 = Buffer.from(arrayBuffer).toString('base64');
-
-    // Upload via GitHub Contents API
-    const repo = process.env.GITHUB_REPO;
-    if (!repo) {
-      return NextResponse.json(
-        { error: 'GITHUB_REPO is not configured' },
-        { status: 500 }
-      );
-    }
-
-    const filename = `${Date.now()}-${file.name}`;
+    const filename = `${Date.now()}-${sanitizeFilename(file.name)}`;
     const path = `uploads/${filename}`;
-
-    const serverToken = process.env.GITHUB_TOKEN;
-    if (!serverToken) {
-      return NextResponse.json(
-        { error: 'GITHUB_TOKEN is not configured' },
-        { status: 500 }
-      );
-    }
 
     const res = await fetch(`${GITHUB_API}/repos/${repo}/contents/${path}`, {
       method: 'PUT',
       headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'Authorization': `Bearer ${serverToken}`,
+        Accept: 'application/vnd.github.v3+json',
+        Authorization: `Bearer ${serverToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -86,23 +85,22 @@ export async function POST(request: NextRequest) {
     });
 
     if (!res.ok) {
-      const error = await res.json().catch(() => ({}));
+      const error = (await res.json().catch(() => ({}))) as { message?: string };
       throw new Error(
-        `GitHub API error: ${res.status} - ${error.message || 'Unknown'}`
+        `GitHub API error: ${res.status} - ${error.message ?? 'Unknown'}`
       );
     }
 
-    const data = await res.json();
+    const data = (await res.json()) as {
+      content: { download_url: string };
+    };
     const url = data.content.download_url;
 
     return NextResponse.json({
       url,
       markdown: `![${file.name}](${url})`,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

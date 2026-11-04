@@ -2,16 +2,21 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { Post, TimelineGroup } from '@/types';
+import { Post, TimelineGroup, PaginatedResponse } from '@/types';
 import Timeline from '@/components/Timeline';
 
 export default function TimelinePage() {
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState<{ year: number; month: number; day: number } | null>(null);
+  const [selectedDate, setSelectedDate] = useState<{
+    year: number;
+    month: number;
+    day: number;
+  } | null>(null);
 
-  // 加载所有说说（分页获取全部）
   useEffect(() => {
+    let active = true;
+
     const fetchAll = async () => {
       let page = 1;
       let posts: Post[] = [];
@@ -20,20 +25,25 @@ export default function TimelinePage() {
       while (hasMore) {
         const res = await fetch(`/api/posts?page=${page}&perPage=100`);
         if (!res.ok) break;
-        const data = await res.json();
+        const data = (await res.json()) as PaginatedResponse<Post>;
         posts = [...posts, ...data.data];
         hasMore = data.hasMore;
         page++;
       }
 
-      setAllPosts(posts);
-      setLoading(false);
+      if (active) {
+        setAllPosts(posts);
+        setLoading(false);
+      }
     };
-    fetchAll();
+
+    void fetchAll();
+    return () => {
+      active = false;
+    };
   }, []);
 
-  // 按年月日分组
-  const groups = useMemo(() => {
+  const groups = useMemo<TimelineGroup>(() => {
     const groupMap = new Map<number, Map<number, Map<number, number>>>();
 
     allPosts.forEach(post => {
@@ -49,24 +59,23 @@ export default function TimelinePage() {
       monthMap.set(day, (monthMap.get(day) || 0) + 1);
     });
 
-    // 取最新的年份作为主分组
-    const years = Array.from(groupMap.keys()).sort((a, b) => b - a);
-    const latestYear = years[0] || 0;
-    const yearMap = groupMap.get(latestYear) || new Map<number, Map<number, number>>();
-
-    const months = Array.from(yearMap.entries())
-      .sort(([a], [b]) => b - a)
-      .map(([month, dayMap]) => ({
-        month,
-        days: Array.from(dayMap.entries())
+    const years = Array.from(groupMap.keys())
+      .sort((a, b) => b - a)
+      .map(year => ({
+        year,
+        months: Array.from(groupMap.get(year)!.entries())
           .sort(([a], [b]) => b - a)
-          .map(([day, count]) => ({ day, count })),
+          .map(([month, dayMap]) => ({
+            month,
+            days: Array.from(dayMap.entries())
+              .sort(([a], [b]) => b - a)
+              .map(([day, count]) => ({ day, count })),
+          })),
       }));
 
-    return { year: latestYear, months } as TimelineGroup;
+    return { years };
   }, [allPosts]);
 
-  // 根据选中日期筛选
   const filteredPosts = useMemo(() => {
     if (!selectedDate) return allPosts;
 
@@ -76,13 +85,11 @@ export default function TimelinePage() {
       const month = date.getMonth() + 1;
       const day = date.getDate();
 
-      if (selectedDate.day > 0) {
-        return year === selectedDate.year && month === selectedDate.month && day === selectedDate.day;
-      }
-      if (selectedDate.month > 0) {
-        return year === selectedDate.year && month === selectedDate.month;
-      }
-      return year === selectedDate.year;
+      if (selectedDate.year !== year) return false;
+      if (selectedDate.month === 0) return true;
+      if (month !== selectedDate.month) return false;
+      if (selectedDate.day === 0) return true;
+      return day === selectedDate.day;
     });
   }, [allPosts, selectedDate]);
 
@@ -96,7 +103,6 @@ export default function TimelinePage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
-      {/* 顶部 */}
       <div className="flex items-center justify-between mb-8">
         <Link
           href="/"
@@ -108,18 +114,19 @@ export default function TimelinePage() {
           返回首页
         </Link>
         <h1 className="text-xl font-bold text-gray-900 dark:text-white">时间线</h1>
-        <div className="w-20" /> {/* 占位，保持标题居中 */}
+        <div className="w-20" />
       </div>
 
-      {/* 时间线内容 */}
       <Timeline
         posts={filteredPosts}
         groups={groups}
         selectedDate={selectedDate}
         onSelectDate={(year, month, day) => {
           setSelectedDate(
-            selectedDate?.year === year && selectedDate?.month === month && selectedDate?.day === day
-              ? null  // 再次点击取消选择
+            selectedDate?.year === year &&
+              selectedDate?.month === month &&
+              selectedDate?.day === day
+              ? null
               : { year, month, day }
           );
         }}

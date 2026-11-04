@@ -7,7 +7,10 @@ export default function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
   const { theme, setTheme } = useTheme();
 
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const timer = setTimeout(() => setMounted(true), 0);
+    return () => clearTimeout(timer);
+  }, []);
   if (!mounted) return null;
 
   return (

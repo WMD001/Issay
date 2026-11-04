@@ -1,38 +1,35 @@
-import { NextAuthOptions, Session } from 'next-auth';
+import { NextAuthOptions } from 'next-auth';
 import GithubProvider from 'next-auth/providers/github';
+import { isAdmin } from '@/lib/utils';
 
 export const authOptions: NextAuthOptions = {
   providers: [
     GithubProvider({
-      clientId: process.env.GITHUB_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      clientId: process.env.GITHUB_CLIENT_ID ?? '',
+      clientSecret: process.env.GITHUB_CLIENT_SECRET ?? '',
       authorization: {
-        params: { scope: 'read:user repo' },
+        params: { scope: 'read:user public_repo' },
       },
     }),
   ],
   callbacks: {
     async jwt({ token, account, profile }) {
-      if (account) {
+      if (account?.access_token) {
         token.accessToken = account.access_token;
       }
-      if (profile) {
-        (token as any).login = (profile as any).login;
+      const login = (profile as { login?: string } | undefined)?.login;
+      if (login) {
+        token.login = login;
       }
       return token;
     },
-    async session({ session, token }): Promise<Session> {
-      return {
-        ...session,
-        accessToken: token.accessToken as string,
-        user: {
-          ...session.user,
-          login: (token as any).login || session.user?.name,
-        },
-      } as Session;
-    },
-    async signIn({ user, profile }) {
-      return true;
+    async session({ session, token }) {
+      session.user = {
+        ...session.user,
+        login: token.login ?? session.user?.name ?? undefined,
+        isAdmin: isAdmin(token.login),
+      };
+      return session;
     },
   },
   pages: {

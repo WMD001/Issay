@@ -36,8 +36,9 @@ export default function ReactionBar({ targetId, reactions, isComment = false, on
     onReact?.();
   };
 
+  const reactionCounts = reactions as unknown as Record<string, number>;
   const activeReactions = Object.entries(REACTION_EMOJIS)
-    .filter(([key]) => (reactions as any)[key] > 0);
+    .filter(([key]) => reactionCounts[key] > 0);
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -50,7 +51,7 @@ export default function ReactionBar({ targetId, reactions, isComment = false, on
           title={session ? '点击添加反应' : '登录后可添加反应'}
         >
           <span>{emoji}</span>
-          <span className="text-gray-600 dark:text-gray-300">{(reactions as any)[key]}</span>
+          <span className="text-gray-600 dark:text-gray-300">{reactionCounts[key]}</span>
         </button>
       ))}
 

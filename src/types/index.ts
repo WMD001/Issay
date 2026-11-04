@@ -45,15 +45,23 @@ export interface TimelineEntry {
   posts: Post[];
 }
 
-export interface TimelineGroup {
+export interface TimelineDayGroup {
+  day: number;
+  count: number;
+}
+
+export interface TimelineMonthGroup {
+  month: number;
+  days: TimelineDayGroup[];
+}
+
+export interface TimelineYearGroup {
   year: number;
-  months: {
-    month: number;
-    days: {
-      day: number;
-      count: number;
-    }[];
-  }[];
+  months: TimelineMonthGroup[];
+}
+
+export interface TimelineGroup {
+  years: TimelineYearGroup[];
 }
 
 export interface PaginatedResponse<T> {
@@ -68,14 +76,4 @@ export interface SearchParams {
   keyword?: string;
   label?: string;
   page?: number;
-}
-
-export interface ExtendedSession {
-  user: {
-    name?: string | null;
-    email?: string | null;
-    image?: string | null;
-    login?: string;
-  };
-  accessToken?: string;
 }

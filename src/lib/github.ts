@@ -5,6 +5,65 @@ import { extractSummary, hasLabel } from './utils';
 
 const GITHUB_API = 'https://api.github.com';
 
+
+export type ReactionContent =
+  | '+1'
+  | '-1'
+  | 'laugh'
+  | 'hooray'
+  | 'confused'
+  | 'heart'
+  | 'rocket'
+  | 'eyes';
+
+interface GitHubUser {
+  login: string;
+  avatar_url: string;
+}
+
+interface GitHubLabel {
+  name: string;
+}
+
+interface GitHubReactions {
+  total_count?: number;
+  '+1'?: number;
+  '-1'?: number;
+  laugh?: number;
+  hooray?: number;
+  confused?: number;
+  heart?: number;
+  rocket?: number;
+  eyes?: number;
+}
+
+interface GitHubIssue {
+  number: number;
+  title?: string | null;
+  body?: string | null;
+  labels?: GitHubLabel[];
+  state?: string;
+  created_at: string;
+  updated_at: string;
+  comments?: number;
+  user: GitHubUser;
+  reactions?: GitHubReactions;
+  pull_request?: unknown;
+}
+
+interface GitHubComment {
+  id: number;
+  body?: string | null;
+  created_at: string;
+  user: GitHubUser;
+  reactions?: GitHubReactions;
+}
+
+interface GitHubSearchResult {
+  total_count: number;
+  items: GitHubIssue[];
+}
+
 /** 服务端 GitHub Token（仅 API Routes 使用，不暴露给客户端） */
 function getServerToken(): string {
   const token = process.env.GITHUB_TOKEN;
@@ -23,34 +82,56 @@ async function githubFetch(
   endpoint: string,
   options: RequestInit = {},
   token?: string
-) {
+): Promise<Response> {
   const authToken = token || getServerToken();
   const res = await fetch(`${GITHUB_API}${endpoint}`, {
     ...options,
     headers: {
-      'Accept': 'application/vnd.github.v3+json',
-      'Authorization': `Bearer ${authToken}`,
+      Accept: 'application/vnd.github.v3+json',
+      Authorization: `Bearer ${authToken}`,
       ...options.headers,
     },
   });
 
   if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
+    const error = (await res.json().catch(() => ({}))) as { message?: string };
     console.error('[githubFetch] error:', res.status, error);
-    throw new Error(`GitHub API error: ${res.status} - ${error.message || 'Unknown'}`);
+    throw new Error(
+      `GitHub API error: ${res.status} - ${error.message ?? 'Unknown'}`
+    );
   }
 
   return res;
 }
 
+function normalizeReactions(reactions?: GitHubReactions): Reactions {
+  return {
+    total_count: reactions?.total_count ?? 0,
+    '+1': reactions?.['+1'] ?? 0,
+    '-1': reactions?.['-1'] ?? 0,
+    laugh: reactions?.laugh ?? 0,
+    hooray: reactions?.hooray ?? 0,
+    confused: reactions?.confused ?? 0,
+    heart: reactions?.heart ?? 0,
+    rocket: reactions?.rocket ?? 0,
+    eyes: reactions?.eyes ?? 0,
+  };
+}
+
+function normalizeLabels(labels: string[]): string[] {
+  return Array.from(
+    new Set(labels.map(label => label.trim()).filter(Boolean))
+  );
+}
+
 /** 将 GitHub Issue 转换为 Post */
-function issueToPost(issue: any): Post {
-  const labels: string[] = issue.labels.map((l: any) => l.name);
+function issueToPost(issue: GitHubIssue): Post {
+  const labels = (issue.labels ?? []).map(label => label.name);
   return {
     id: issue.number,
-    title: issue.title || '',
-    body: issue.body || '',
-    summary: extractSummary(issue.body || ''),
+    title: issue.title ?? '',
+    body: issue.body ?? '',
+    summary: extractSummary(issue.body ?? ''),
     labels,
     isDraft: hasLabel(labels, 'draft'),
     createdAt: issue.created_at,
@@ -59,38 +140,91 @@ function issueToPost(issue: any): Post {
       login: issue.user.login,
       avatarUrl: issue.user.avatar_url,
     },
-    commentCount: issue.comments,
-    reactions: issue.reactions || {
-      total_count: 0, '+1': 0, '-1': 0, laugh: 0,
-      hooray: 0, confused: 0, heart: 0, rocket: 0, eyes: 0,
-    },
+    commentCount: issue.comments ?? 0,
+    reactions: normalizeReactions(issue.reactions),
   };
+}
+
+/** 确保标签存在，不存在时自动创建 */
+async function ensureLabels(labels: string[], token?: string): Promise<void> {
+  for (const name of labels) {
+    try {
+      await githubFetch(
+        `/repos/${getRepo()}/labels/${encodeURIComponent(name)}`,
+        {},
+        token
+      );
+      continue;
+    } catch {
+      // 标签不存在，尝试创建
+    }
+
+    try {
+      await githubFetch(
+        `/repos/${getRepo()}/labels`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, color: '8b5cf6' }),
+        },
+        token
+      );
+    } catch {
+      // 标签已存在（422）或创建失败，交给后续请求处理
+    }
+  }
+}
+
+export interface GetPostsOptions {
+  page?: number;
+  perPage?: number;
+  includeDraft?: boolean;
+  label?: string;
+  draftOnly?: boolean;
 }
 
 /** 获取说说列表（分页，默认排除草稿） */
 export async function getPosts(
-  page = 1,
-  perPage = 10,
-  includeDraft = false
+  options: GetPostsOptions = {}
 ): Promise<PaginatedResponse<Post>> {
-  const repo = getRepo();
+  const {
+    page = 1,
+    perPage = 10,
+    includeDraft = false,
+    label,
+    draftOnly = false,
+  } = options;
+
+  const safePage = Math.max(1, page);
+  const safePerPage = Math.min(100, Math.max(1, perPage));
+  const labelNames = ['shuoshuo'];
+  if (draftOnly) {
+    labelNames.push('draft');
+  } else if (label) {
+    labelNames.push(label);
+  }
+  const labelsParam = labelNames.map(name => encodeURIComponent(name)).join(',');
+
   const res = await githubFetch(
-    `/repos/${repo}/issues?labels=shuoshuo&state=open&sort=created&direction=desc&per_page=${perPage}&page=${page}`
+    `/repos/${getRepo()}/issues?labels=${labelsParam}&state=open&sort=created&direction=desc&per_page=${safePerPage}&page=${safePage}`
   );
 
-  const issues = await res.json();
-  const linkHeader = res.headers.get('Link') || '';
+  const issues = (await res.json()) as GitHubIssue[];
+  const linkHeader = res.headers.get('Link') ?? '';
   const hasNext = linkHeader.includes('rel="next"');
+  const showDraft = includeDraft || draftOnly;
 
   const posts = issues
-    .filter((i: any) => !i.pull_request)
-    .filter((i: any) => includeDraft || !hasLabel(i.labels.map((l: any) => l.name), 'draft'))
+    .filter(issue => !issue.pull_request)
+    .filter(
+      issue => showDraft || !hasLabel((issue.labels ?? []).map(l => l.name), 'draft')
+    )
     .map(issueToPost);
 
   return {
     data: posts,
-    page,
-    perPage,
+    page: safePage,
+    perPage: safePerPage,
     total: posts.length,
     hasMore: hasNext,
   };
@@ -98,9 +232,8 @@ export async function getPosts(
 
 /** 获取单条说说 */
 export async function getPost(id: number, token?: string): Promise<Post> {
-  const repo = getRepo();
-  const res = await githubFetch(`/repos/${repo}/issues/${id}`, {}, token);
-  const issue = await res.json();
+  const res = await githubFetch(`/repos/${getRepo()}/issues/${id}`, {}, token);
+  const issue = (await res.json()) as GitHubIssue;
   return issueToPost(issue);
 }
 
@@ -108,48 +241,67 @@ export async function getPost(id: number, token?: string): Promise<Post> {
 export async function createPost(
   title: string,
   body: string,
-  labels: string[],
+  labels: string[] = [],
   token?: string
 ): Promise<Post> {
-  const repo = getRepo();
+  const finalLabels = normalizeLabels(['shuoshuo', ...labels]);
+  await ensureLabels(finalLabels, token);
+
+  const fallbackTitle = body.split('\n')[0].trim().slice(0, 50) || '无标题';
   const res = await githubFetch(
-    `/repos/${repo}/issues`,
+    `/repos/${getRepo()}/issues`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: title || body.slice(0, 50), body, labels }),
+      body: JSON.stringify({
+        title: title.trim() || fallbackTitle,
+        body,
+        labels: finalLabels,
+      }),
     },
     token
   );
-  const issue = await res.json();
+
+  const issue = (await res.json()) as GitHubIssue;
   return issueToPost(issue);
+}
+
+export interface UpdatePostInput {
+  title?: string;
+  body?: string;
+  labels?: string[];
+  state?: 'open' | 'closed';
 }
 
 /** 更新说说 */
 export async function updatePost(
   id: number,
-  data: { title?: string; body?: string; labels?: string[] },
+  data: UpdatePostInput,
   token?: string
 ): Promise<Post> {
-  const repo = getRepo();
+  const payload: UpdatePostInput = { ...data };
+  if (data.labels) {
+    payload.labels = normalizeLabels(['shuoshuo', ...data.labels]);
+    await ensureLabels(payload.labels, token);
+  }
+
   const res = await githubFetch(
-    `/repos/${repo}/issues/${id}`,
+    `/repos/${getRepo()}/issues/${id}`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     },
     token
   );
-  const issue = await res.json();
+  const issue = (await res.json()) as GitHubIssue;
   return issueToPost(issue);
 }
 
 /** 关闭说说（软删除） */
 export async function closePost(id: number, token?: string): Promise<void> {
-  const repo = getRepo();
   await githubFetch(
-    `/repos/${repo}/issues/${id}`,
+    `/repos/${getRepo()}/issues/${id}`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -164,26 +316,22 @@ export async function getComments(
   issueId: number,
   token?: string
 ): Promise<Comment[]> {
-  const repo = getRepo();
   const res = await githubFetch(
-    `/repos/${repo}/issues/${issueId}/comments?per_page=100`,
+    `/repos/${getRepo()}/issues/${issueId}/comments?per_page=100`,
     {},
     token
   );
-  const comments = await res.json();
+  const comments = (await res.json()) as GitHubComment[];
 
-  return comments.map((c: any) => ({
-    id: c.id,
-    body: c.body,
-    createdAt: c.created_at,
+  return comments.map(comment => ({
+    id: comment.id,
+    body: comment.body ?? '',
+    createdAt: comment.created_at,
     author: {
-      login: c.user.login,
-      avatarUrl: c.user.avatar_url,
+      login: comment.user.login,
+      avatarUrl: comment.user.avatar_url,
     },
-    reactions: c.reactions || {
-      total_count: 0, '+1': 0, '-1': 0, laugh: 0,
-      hooray: 0, confused: 0, heart: 0, rocket: 0, eyes: 0,
-    },
+    reactions: normalizeReactions(comment.reactions),
   }));
 }
 
@@ -193,9 +341,8 @@ export async function createComment(
   body: string,
   token?: string
 ): Promise<Comment> {
-  const repo = getRepo();
   const res = await githubFetch(
-    `/repos/${repo}/issues/${issueId}/comments`,
+    `/repos/${getRepo()}/issues/${issueId}/comments`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -203,34 +350,30 @@ export async function createComment(
     },
     token
   );
-  const comment = await res.json();
+  const comment = (await res.json()) as GitHubComment;
 
   return {
     id: comment.id,
-    body: comment.body,
+    body: comment.body ?? '',
     createdAt: comment.created_at,
     author: {
       login: comment.user.login,
       avatarUrl: comment.user.avatar_url,
     },
-    reactions: comment.reactions || {
-      total_count: 0, '+1': 0, '-1': 0, laugh: 0,
-      hooray: 0, confused: 0, heart: 0, rocket: 0, eyes: 0,
-    },
+    reactions: normalizeReactions(comment.reactions),
   };
 }
 
 /** 添加表情反应 */
 export async function addReaction(
-  issueId: number,
-  content: string,
+  targetId: number,
+  content: ReactionContent,
   token?: string,
   isComment = false
 ): Promise<void> {
-  const repo = getRepo();
   const endpoint = isComment
-    ? `/repos/${repo}/issues/comments/${issueId}/reactions`
-    : `/repos/${repo}/issues/${issueId}/reactions`;
+    ? `/repos/${getRepo()}/issues/comments/${targetId}/reactions`
+    : `/repos/${getRepo()}/issues/${targetId}/reactions`;
 
   await githubFetch(
     endpoint,
@@ -243,12 +386,18 @@ export async function addReaction(
   );
 }
 
-/** 获取说说的所有标签（用于筛选） */
+/** 获取仓库所有标签 */
 export async function getLabels(): Promise<string[]> {
-  const repo = getRepo();
-  const res = await githubFetch(`/repos/${repo}/labels?per_page=100`);
-  const labels = await res.json();
-  return labels.map((l: any) => l.name);
+  const res = await githubFetch(`/repos/${getRepo()}/labels?per_page=100`);
+  const labels = (await res.json()) as GitHubLabel[];
+  return labels.map(label => label.name);
+}
+
+/** 获取自定义标签（排除系统标签） */
+export async function getCustomLabels(): Promise<string[]> {
+  const systemLabels = new Set(['shuoshuo', 'draft']);
+  const labels = await getLabels();
+  return labels.filter(label => !systemLabels.has(label.toLowerCase()));
 }
 
 /** 搜索说说（通过 GitHub Search API） */
@@ -257,63 +406,43 @@ export async function searchPosts(
   label?: string,
   page = 1
 ): Promise<PaginatedResponse<Post>> {
-  const repo = getRepo();
-  const labelQuery = label ? ` label:${label}` : ' label:shuoshuo';
-  const query = `${keyword}${labelQuery} repo:${repo} is:issue is:open`;
+  const safeKeyword = keyword.replace(/["\\]/g, ' ').trim();
+  const perPage = 10;
+  const safePage = Math.max(1, page);
+
+  if (!safeKeyword) {
+    return {
+      data: [],
+      page: safePage,
+      perPage,
+      total: 0,
+      hasMore: false,
+    };
+  }
+
+  const safeLabel = label?.replace(/["\\]/g, ' ').trim();
+  const labelQuery = safeLabel
+    ? ` label:shuoshuo label:"${safeLabel}"`
+    : ' label:shuoshuo';
+  const query = `${safeKeyword}${labelQuery} repo:${getRepo()} is:issue is:open`;
 
   const res = await githubFetch(
-    `/search/issues?q=${encodeURIComponent(query)}&sort=created&order=desc&per_page=10&page=${page}`
+    `/search/issues?q=${encodeURIComponent(query)}&sort=created&order=desc&per_page=${perPage}&page=${safePage}`
   );
-  const result = await res.json();
+  const result = (await res.json()) as GitHubSearchResult;
 
   const posts = result.items
-    .filter((i: any) => !i.pull_request)
-    .filter((i: any) => !hasLabel(i.labels.map((l: any) => l.name), 'draft'))
+    .filter(issue => !issue.pull_request)
+    .filter(
+      issue => !hasLabel((issue.labels ?? []).map(l => l.name), 'draft')
+    )
     .map(issueToPost);
 
   return {
     data: posts,
-    page,
-    perPage: 10,
+    page: safePage,
+    perPage,
     total: result.total_count,
-    hasMore: result.total_count > page * 10,
+    hasMore: result.total_count > safePage * perPage,
   };
-}
-
-/** 上传图片到 Issue（作为评论附件） */
-export async function uploadImage(
-  issueId: number,
-  file: Buffer,
-  filename: string,
-  token: string
-): Promise<string> {
-  // GitHub 不直接支持通过 API 上传附件
-  // 替代方案：创建一个包含 base64 图片的 comment
-  // 实际生产中建议使用外部图床
-  const base64 = file.toString('base64');
-  const ext = filename.split('.').pop()?.toLowerCase() || 'png';
-  const mimeMap: Record<string, string> = {
-    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-    gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
-  };
-  const mime = mimeMap[ext] || 'image/png';
-
-  // 尝试使用 GitHub Contents API 上传到仓库
-  const repo = getRepo();
-  const path = `assets/${issueId}/${Date.now()}-${filename}`;
-
-  const res = await githubFetch(
-    `/repos/${repo}/contents/${path}`,
-    {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: `Upload image: ${filename}`,
-        content: base64,
-      }),
-    },
-    token
-  );
-  const data = await res.json();
-  return data.content.download_url;
 }

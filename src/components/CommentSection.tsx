@@ -10,43 +10,71 @@ import ReactionBar from './ReactionBar';
 
 interface CommentSectionProps {
   issueId: number;
+  onCommentAdded?: () => void;
 }
 
-export default function CommentSection({ issueId }: CommentSectionProps) {
+export default function CommentSection({
+  issueId,
+  onCommentAdded,
+}: CommentSectionProps) {
   const { data: session } = useSession();
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/comments?issueId=${issueId}`);
+        if (res.ok) {
+          const data = (await res.json()) as Comment[];
+          if (active) setComments(data);
+        }
+      } finally {
+        if (active) setFetching(false);
+      }
+    };
+
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [issueId]);
 
   const fetchComments = async () => {
     const res = await fetch(`/api/comments?issueId=${issueId}`);
     if (res.ok) {
       setComments(await res.json());
     }
-    setFetching(false);
   };
-
-  useEffect(() => {
-    fetchComments();
-  }, [issueId]);
 
   const handleSubmit = async () => {
     if (!newComment.trim()) return;
 
     setLoading(true);
-    const res = await fetch('/api/comments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ issueId, body: newComment }),
-    });
-
-    if (res.ok) {
-      const comment = await res.json();
-      setComments(prev => [...prev, comment]);
+    setError('');
+    try {
+      const res = await fetch('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issueId, body: newComment }),
+      });
+      const data = (await res.json()) as Comment & { error?: string };
+      if (!res.ok) {
+        throw new Error(data.error ?? '评论失败');
+      }
+      setComments(prev => [...prev, data]);
       setNewComment('');
+      onCommentAdded?.();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '评论失败');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -55,7 +83,6 @@ export default function CommentSection({ issueId }: CommentSectionProps) {
         评论 ({comments.length})
       </h3>
 
-      {/* 评论列表 */}
       {fetching ? (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">加载中...</div>
       ) : comments.length === 0 ? (
@@ -97,12 +124,11 @@ export default function CommentSection({ issueId }: CommentSectionProps) {
         </div>
       )}
 
-      {/* 发表评论 */}
       {session ? (
         <div className="flex gap-3">
           <Image
-            src={session.user?.image || ''}
-            alt={session.user?.name || ''}
+            src={session.user?.image || `https://github.com/${session.user?.login}.png`}
+            alt={session.user?.login || ''}
             width={32}
             height={32}
             className="rounded-full mt-1 self-start flex-shrink-0"
@@ -115,6 +141,9 @@ export default function CommentSection({ issueId }: CommentSectionProps) {
               rows={3}
               className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none"
             />
+            {error && (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>
+            )}
             <div className="flex justify-end mt-2">
               <button
                 onClick={handleSubmit}

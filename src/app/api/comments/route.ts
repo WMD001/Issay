@@ -1,8 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { getComments, createComment, addReaction } from '@/lib/github';
-import { ExtendedSession } from '@/types';
+import {
+  getComments,
+  createComment,
+  addReaction,
+  type ReactionContent,
+} from '@/lib/github';
+import { getAccessToken } from '@/lib/server-auth';
+
+const REACTION_CONTENTS: readonly ReactionContent[] = [
+  '+1',
+  '-1',
+  'laugh',
+  'hooray',
+  'confused',
+  'heart',
+  'rocket',
+  'eyes',
+];
+
+interface CreateCommentBody {
+  issueId?: number;
+  body?: string;
+}
+
+interface ReactionBody {
+  targetId?: number;
+  content?: string;
+  isComment?: boolean;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Internal Server Error';
+}
 
 /** GET /api/comments?issueId=123 */
 export async function GET(request: NextRequest) {
@@ -17,60 +46,46 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const issueId = parseInt(issueIdStr, 10);
-    const session = await getServerSession(authOptions);
-    const token = (session as ExtendedSession | null)?.accessToken;
-
-    const comments = await getComments(issueId, token);
+    const comments = await getComments(Number.parseInt(issueIdStr, 10));
     return NextResponse.json(comments);
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }
 
-/** POST /api/comments — 发表评论（需登录） */
+/** POST /api/comments — 发表评论（需登录，以登录用户身份写入） */
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    const extSession = session as ExtendedSession | null;
-
-    if (!extSession?.accessToken) {
+    const token = await getAccessToken(request);
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { issueId, body } = await request.json();
-
-    if (!issueId || !body) {
+    const { issueId, body } = (await request.json()) as CreateCommentBody;
+    if (!issueId || !body?.trim()) {
       return NextResponse.json(
         { error: 'issueId and body are required' },
         { status: 400 }
       );
     }
 
-    const comment = await createComment(issueId, body);
+    const comment = await createComment(issueId, body.trim(), token);
     return NextResponse.json(comment, { status: 201 });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }
 
-/** PUT /api/comments — 添加表情反应（需登录） */
+/** PUT /api/comments — 添加表情反应（需登录，以登录用户身份写入） */
 export async function PUT(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    const extSession = session as ExtendedSession | null;
-
-    if (!extSession?.accessToken) {
+    const token = await getAccessToken(request);
+    if (!token) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { targetId, content, isComment } = await request.json();
+    const { targetId, content, isComment } =
+      (await request.json()) as ReactionBody;
 
     if (!targetId || !content) {
       return NextResponse.json(
@@ -79,12 +94,18 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    await addReaction(targetId, content, undefined, isComment);
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
-      { status: 500 }
+    if (!REACTION_CONTENTS.includes(content as ReactionContent)) {
+      return NextResponse.json({ error: 'Invalid reaction' }, { status: 400 });
+    }
+
+    await addReaction(
+      targetId,
+      content as ReactionContent,
+      token,
+      Boolean(isComment)
     );
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

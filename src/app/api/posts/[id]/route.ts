@@ -1,9 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getPost, updatePost, closePost } from '@/lib/github';
-import { isAdmin } from '@/lib/utils';
-import { ExtendedSession } from '@/types';
+import { getPost, updatePost, closePost, type UpdatePostInput } from '@/lib/github';
+import { isAdmin, extractCustomLabels } from '@/lib/utils';
+
+interface UpdatePostBody {
+  title?: string;
+  body?: string;
+  labels?: string[];
+  isDraft?: boolean;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Internal Server Error';
+}
 
 /** GET /api/posts/[id] — 获取单条说说 */
 export async function GET(
@@ -12,16 +22,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const session = await getServerSession(authOptions);
-    const token = (session as ExtendedSession | null)?.accessToken;
-
-    const post = await getPost(parseInt(id, 10), token);
+    const post = await getPost(Number.parseInt(id, 10));
     return NextResponse.json(post);
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }
 
@@ -33,20 +37,40 @@ export async function PATCH(
   try {
     const { id } = await params;
     const session = await getServerSession(authOptions);
-    const extSession = session as ExtendedSession | null;
-
-    if (!extSession?.accessToken || !isAdmin(extSession.user?.login)) {
+    if (!isAdmin(session?.user?.login)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const data = await request.json();
-    const post = await updatePost(parseInt(id, 10), data);
+    const data = (await request.json()) as UpdatePostBody;
+    const postId = Number.parseInt(id, 10);
+    const update: UpdatePostInput = {};
+
+    if (typeof data.title === 'string') {
+      update.title = data.title;
+    }
+    if (typeof data.body === 'string') {
+      update.body = data.body;
+    }
+
+    if (Array.isArray(data.labels) || typeof data.isDraft === 'boolean') {
+      const existing = await getPost(postId);
+      const customLabels = Array.isArray(data.labels)
+        ? data.labels.filter((label): label is string => typeof label === 'string')
+        : extractCustomLabels(existing.labels);
+      const isDraft =
+        typeof data.isDraft === 'boolean' ? data.isDraft : existing.isDraft;
+
+      update.labels = [
+        'shuoshuo',
+        ...customLabels,
+        ...(isDraft ? ['draft'] : []),
+      ];
+    }
+
+    const post = await updatePost(postId, update);
     return NextResponse.json(post);
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }
 
@@ -58,18 +82,13 @@ export async function DELETE(
   try {
     const { id } = await params;
     const session = await getServerSession(authOptions);
-    const extSession = session as ExtendedSession | null;
-
-    if (!extSession?.accessToken || !isAdmin(extSession.user?.login)) {
+    if (!isAdmin(session?.user?.login)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    await closePost(parseInt(id, 10));
+    await closePost(Number.parseInt(id, 10));
     return NextResponse.json({ success: true });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error.message || 'Internal Server Error' },
-      { status: 500 }
-    );
+  } catch (error) {
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }
