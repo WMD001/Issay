@@ -131,6 +131,7 @@ export default function CommentSection({
   const [error, setError] = useState('');
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [composerOpen, setComposerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const roots = useMemo(() => buildCommentTree(comments), [comments]);
@@ -168,8 +169,21 @@ export default function CommentSection({
 
   const handleReply = (comment: Comment) => {
     setReplyTo(comment);
+    setComposerOpen(true);
     setError('');
     requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const handleOpenComposer = () => {
+    setReplyTo(null);
+    setError('');
+    setComposerOpen(true);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  const handleCloseComposer = () => {
+    setComposerOpen(false);
+    setReplyTo(null);
   };
 
   const handleSubmit = async () => {
@@ -195,6 +209,7 @@ export default function CommentSection({
       setComments(prev => [...prev, data]);
       setNewComment('');
       setReplyTo(null);
+      setComposerOpen(false);
       onCommentAdded?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : '评论失败');
@@ -211,9 +226,35 @@ export default function CommentSection({
           : 'mt-6 border-t border-gray-200 dark:border-gray-700 pt-6'
       }
     >
-      <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-3">
-        评论 ({comments.length})
-      </h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-base font-semibold text-gray-900 dark:text-white">
+          评论 ({comments.length})
+        </h3>
+        {session ? (
+          composerOpen ? (
+            <button
+              onClick={handleCloseComposer}
+              className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+            >
+              收起
+            </button>
+          ) : (
+            <button
+              onClick={handleOpenComposer}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              写评论
+            </button>
+          )
+        ) : (
+          <button
+            onClick={() => signIn('github')}
+            className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          >
+            登录后评论
+          </button>
+        )}
+      </div>
 
       {fetching ? (
         <div className="py-4 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -224,7 +265,7 @@ export default function CommentSection({
           暂无评论
         </div>
       ) : (
-        <div className="mb-4">
+        <div>
           {!expanded && hiddenCount > 0 && (
             <button
               onClick={() => setExpanded(true)}
@@ -257,8 +298,8 @@ export default function CommentSection({
         </div>
       )}
 
-      {session ? (
-        <div className="flex gap-2.5">
+      {session && composerOpen && (
+        <div className="flex gap-2.5 mt-3">
           <Image
             src={session.user?.image || `https://github.com/${session.user?.login}.png`}
             alt={session.user?.login || ''}
@@ -267,17 +308,17 @@ export default function CommentSection({
             className="rounded-full mt-0.5 self-start flex-shrink-0"
           />
           <div className="flex-1">
-            {replyTo && (
-              <div className="flex items-center justify-between mb-1 text-xs text-gray-500 dark:text-gray-400">
-                <span>回复 @{replyTo.author.login}</span>
-                <button
-                  onClick={() => setReplyTo(null)}
-                  className="hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-                >
-                  取消
-                </button>
-              </div>
-            )}
+            <div className="flex items-center justify-between mb-1 text-xs text-gray-500 dark:text-gray-400">
+              <span>
+                {replyTo ? `回复 @${replyTo.author.login}` : '发表评论'}
+              </span>
+              <button
+                onClick={handleCloseComposer}
+                className="hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+              >
+                取消
+              </button>
+            </div>
             <textarea
               ref={textareaRef}
               value={newComment}
@@ -304,15 +345,7 @@ export default function CommentSection({
             </div>
           </div>
         </div>
-      ) : (
-        <div className="py-2 text-center">
-          <button
-            onClick={() => signIn('github')}
-            className="px-4 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
-          >
-            登录 GitHub 后评论
-          </button>
-        </div>
+
       )}
     </section>
   );
