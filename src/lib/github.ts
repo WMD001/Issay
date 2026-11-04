@@ -399,21 +399,37 @@ export async function addReaction(
   );
 }
 
-/** 获取仓库所有标签 */
-export async function getLabels(token?: string): Promise<string[]> {
-  const res = await githubRead(
-    `/repos/${getRepo()}/labels?per_page=100`,
-    token
-  );
-  const labels = (await res.json()) as GitHubLabel[];
-  return labels.map(label => label.name);
-}
-
-/** 获取自定义标签（排除系统标签） */
-export async function getCustomLabels(token?: string): Promise<string[]> {
+/** 获取说说中实际使用的自定义标签（按使用次数排序，排除空标签） */
+export async function getUsedLabels(token?: string): Promise<string[]> {
   const systemLabels = new Set(['shuoshuo', 'draft']);
-  const labels = await getLabels(token);
-  return labels.filter(label => !systemLabels.has(label.toLowerCase()));
+  const counts = new Map<string, number>();
+  const perPage = 100;
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore && page <= 5) {
+    const res = await githubRead(
+      `/repos/${getRepo()}/issues?labels=shuoshuo&state=open&per_page=${perPage}&page=${page}`,
+      token
+    );
+    const issues = (await res.json()) as GitHubIssue[];
+    hasMore = (res.headers.get('Link') ?? '').includes('rel="next"');
+    page++;
+
+    for (const issue of issues) {
+      if (issue.pull_request) continue;
+      const labels = (issue.labels ?? []).map(label => label.name);
+      if (hasLabel(labels, 'draft')) continue;
+      for (const label of labels) {
+        if (systemLabels.has(label.toLowerCase())) continue;
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+      }
+    }
+  }
+
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name]) => name);
 }
 
 /** 搜索说说（通过 GitHub Search API） */

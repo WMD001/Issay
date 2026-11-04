@@ -10,11 +10,13 @@ import ReactionBar from './ReactionBar';
 
 interface CommentSectionProps {
   issueId: number;
+  embedded?: boolean;
   onCommentAdded?: () => void;
 }
 
 export default function CommentSection({
   issueId,
+  embedded = false,
   onCommentAdded,
 }: CommentSectionProps) {
   const { data: session } = useSession();
@@ -78,7 +80,13 @@ export default function CommentSection({
   };
 
   return (
-    <section className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-8">
+    <section
+      className={
+        embedded
+          ? ''
+          : 'mt-8 border-t border-gray-200 dark:border-gray-700 pt-8'
+      }
+    >
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
         评论 ({comments.length})
       </h3>

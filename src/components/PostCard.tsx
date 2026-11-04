@@ -147,9 +147,10 @@ export default function PostCard({ post, onUpdated, onDeleted }: PostCardProps) 
       </div>
 
       {showComments && (
-        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+        <div className="mt-4">
           <CommentSection
             issueId={post.id}
+            embedded
             onCommentAdded={() => setCommentCount(count => count + 1)}
           />
         </div>
