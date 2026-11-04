@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getPost, updatePost, closePost, type UpdatePostInput } from '@/lib/github';
 import { isAdmin, extractCustomLabels } from '@/lib/utils';
+import { getAccessToken } from '@/lib/server-auth';
 
 interface UpdatePostBody {
   title?: string;
@@ -22,7 +23,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const post = await getPost(Number.parseInt(id, 10));
+    const token = await getAccessToken(request);
+    const post = await getPost(Number.parseInt(id, 10), token);
     return NextResponse.json(post);
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
@@ -37,7 +39,8 @@ export async function PATCH(
   try {
     const { id } = await params;
     const session = await getServerSession(authOptions);
-    if (!isAdmin(session?.user?.login)) {
+    const token = await getAccessToken(request);
+    if (!token || !isAdmin(session?.user?.login)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -53,7 +56,7 @@ export async function PATCH(
     }
 
     if (Array.isArray(data.labels) || typeof data.isDraft === 'boolean') {
-      const existing = await getPost(postId);
+      const existing = await getPost(postId, token);
       const customLabels = Array.isArray(data.labels)
         ? data.labels.filter((label): label is string => typeof label === 'string')
         : extractCustomLabels(existing.labels);
@@ -67,7 +70,7 @@ export async function PATCH(
       ];
     }
 
-    const post = await updatePost(postId, update);
+    const post = await updatePost(postId, update, token);
     return NextResponse.json(post);
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
@@ -82,11 +85,12 @@ export async function DELETE(
   try {
     const { id } = await params;
     const session = await getServerSession(authOptions);
-    if (!isAdmin(session?.user?.login)) {
+    const token = await getAccessToken(request);
+    if (!token || !isAdmin(session?.user?.login)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    await closePost(Number.parseInt(id, 10));
+    await closePost(Number.parseInt(id, 10), token);
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 });

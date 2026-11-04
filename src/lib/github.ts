@@ -64,11 +64,9 @@ interface GitHubSearchResult {
   items: GitHubIssue[];
 }
 
-/** 服务端 GitHub Token（仅 API Routes 使用，不暴露给客户端） */
-function getServerToken(): string {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) throw new Error('GITHUB_TOKEN is not set');
-  return token;
+/** 可选的服务端 GitHub Token（仅用于提高匿名读取限额或访问私有仓库） */
+function getServerToken(): string | undefined {
+  return process.env.GITHUB_TOKEN;
 }
 
 function getRepo(): string {
@@ -83,14 +81,16 @@ async function githubFetch(
   options: RequestInit = {},
   token?: string
 ): Promise<Response> {
-  const authToken = token || getServerToken();
+  const authToken = token ?? getServerToken();
+  const headers = new Headers(options.headers);
+  headers.set('Accept', 'application/vnd.github.v3+json');
+  if (authToken) {
+    headers.set('Authorization', `Bearer ${authToken}`);
+  }
+
   const res = await fetch(`${GITHUB_API}${endpoint}`, {
     ...options,
-    headers: {
-      Accept: 'application/vnd.github.v3+json',
-      Authorization: `Bearer ${authToken}`,
-      ...options.headers,
-    },
+    headers,
   });
 
   if (!res.ok) {
@@ -181,6 +181,7 @@ export interface GetPostsOptions {
   includeDraft?: boolean;
   label?: string;
   draftOnly?: boolean;
+  token?: string;
 }
 
 /** 获取说说列表（分页，默认排除草稿） */
@@ -193,6 +194,7 @@ export async function getPosts(
     includeDraft = false,
     label,
     draftOnly = false,
+    token,
   } = options;
 
   const safePage = Math.max(1, page);
@@ -206,7 +208,9 @@ export async function getPosts(
   const labelsParam = labelNames.map(name => encodeURIComponent(name)).join(',');
 
   const res = await githubFetch(
-    `/repos/${getRepo()}/issues?labels=${labelsParam}&state=open&sort=created&direction=desc&per_page=${safePerPage}&page=${safePage}`
+    `/repos/${getRepo()}/issues?labels=${labelsParam}&state=open&sort=created&direction=desc&per_page=${safePerPage}&page=${safePage}`,
+    {},
+    token
   );
 
   const issues = (await res.json()) as GitHubIssue[];
@@ -387,16 +391,20 @@ export async function addReaction(
 }
 
 /** 获取仓库所有标签 */
-export async function getLabels(): Promise<string[]> {
-  const res = await githubFetch(`/repos/${getRepo()}/labels?per_page=100`);
+export async function getLabels(token?: string): Promise<string[]> {
+  const res = await githubFetch(
+    `/repos/${getRepo()}/labels?per_page=100`,
+    {},
+    token
+  );
   const labels = (await res.json()) as GitHubLabel[];
   return labels.map(label => label.name);
 }
 
 /** 获取自定义标签（排除系统标签） */
-export async function getCustomLabels(): Promise<string[]> {
+export async function getCustomLabels(token?: string): Promise<string[]> {
   const systemLabels = new Set(['shuoshuo', 'draft']);
-  const labels = await getLabels();
+  const labels = await getLabels(token);
   return labels.filter(label => !systemLabels.has(label.toLowerCase()));
 }
 
@@ -404,7 +412,8 @@ export async function getCustomLabels(): Promise<string[]> {
 export async function searchPosts(
   keyword: string,
   label?: string,
-  page = 1
+  page = 1,
+  token?: string
 ): Promise<PaginatedResponse<Post>> {
   const safeKeyword = keyword.replace(/["\\]/g, ' ').trim();
   const perPage = 10;
@@ -427,7 +436,9 @@ export async function searchPosts(
   const query = `${safeKeyword}${labelQuery} repo:${getRepo()} is:issue is:open`;
 
   const res = await githubFetch(
-    `/search/issues?q=${encodeURIComponent(query)}&sort=created&order=desc&per_page=${perPage}&page=${safePage}`
+    `/search/issues?q=${encodeURIComponent(query)}&sort=created&order=desc&per_page=${perPage}&page=${safePage}`,
+    {},
+    token
   );
   const result = (await res.json()) as GitHubSearchResult;
 

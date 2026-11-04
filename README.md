@@ -36,7 +36,7 @@ A lightweight, Memos-style personal timeline: write quick notes, tag them, searc
 - Node.js 20.9+
 - A **public** GitHub repository used as the data store, with Issues enabled
 - A GitHub OAuth App
-- A GitHub personal access token
+
 
 ### Environment Variables
 
@@ -46,7 +46,7 @@ A lightweight, Memos-style personal timeline: write quick notes, tag them, searc
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth App client secret |
 | `NEXTAUTH_SECRET` | Random secret, e.g. `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | Site URL, e.g. `http://localhost:3000` |
-| `GITHUB_TOKEN` | PAT with Issues Read/Write, Contents Read/Write, Metadata Read |
+| `GITHUB_TOKEN` | **Optional.** PAT (Issues RW, Contents RW, Metadata Read) that raises read rate limits or allows private repositories. Not required for a public repository. |
 | `GITHUB_OWNER` | GitHub login of the site owner (admin) |
 | `GITHUB_REPO` | Data repository as **`owner/repo`** |
 
@@ -75,7 +75,8 @@ Notes:
 
 - Vercel limits serverless request bodies to **4.5 MB**, so image uploads are capped at 4 MB in this project.
 - Preview deployments use a different origin; add their callback URLs or configure `NEXTAUTH_URL` per environment.
-- Comments and reactions are written with the signed-in user's OAuth token; posts and image uploads use the server-side `GITHUB_TOKEN`.
+- All writes (posts, edits, deletes, uploads, comments, reactions) use the signed-in user's OAuth token, so no PAT is required for a public repository.
+- Anonymous reads are limited to 60 requests/hour per IP; logging in raises the limit with the user's OAuth token. Configure the optional `GITHUB_TOKEN` to keep reads at 5,000 requests/hour for all visitors.
 
 ## Project Structure
 

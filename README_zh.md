@@ -36,7 +36,7 @@
 - Node.js 20.9+
 - 一个用作数据存储的**公开** GitHub 仓库，并已开启 Issues
 - 一个用于认证的 GitHub OAuth 应用
-- 一个 GitHub 个人访问令牌
+
 
 ### 环境变量
 
@@ -46,7 +46,7 @@
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth App 客户端密钥 |
 | `NEXTAUTH_SECRET` | 随机密钥，可用 `openssl rand -base64 32` 生成 |
 | `NEXTAUTH_URL` | 站点地址，如 `http://localhost:3000` |
-| `GITHUB_TOKEN` | PAT，需 Issues 读写、Contents 读写、Metadata 读取权限 |
+| `GITHUB_TOKEN` | **可选。** PAT（Issues 读写、Contents 读写、Metadata 读取），用于提高读取限额或访问私有仓库；公开仓库不需要。 |
 | `GITHUB_OWNER` | 站长的 GitHub 用户名（管理员） |
 | `GITHUB_REPO` | 数据仓库，格式为 **`owner/repo`** |
 
@@ -75,7 +75,8 @@ npm run dev
 
 - Vercel Serverless 请求体上限为 **4.5MB**，因此本项目图片上传限制为 4MB。
 - Preview 部署使用不同的域名，需要单独添加回调地址或为每个环境配置 `NEXTAUTH_URL`。
-- 评论与表情回应使用登录用户的 OAuth token 写入；发帖与图片上传使用服务端 `GITHUB_TOKEN`。
+- 所有写操作（发帖、编辑、删除、上传、评论、反应）均使用登录用户的 OAuth token，公开仓库无需 PAT。
+- 未登录读取受限于 60 次/小时/IP；登录后使用用户 OAuth token 提高限额。如需所有访客都保持 5,000 次/小时，可配置可选的 `GITHUB_TOKEN`。
 
 ## 项目结构
 

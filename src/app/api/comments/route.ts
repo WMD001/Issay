@@ -46,7 +46,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const comments = await getComments(Number.parseInt(issueIdStr, 10));
+    const token = await getAccessToken(request);
+    const comments = await getComments(
+      Number.parseInt(issueIdStr, 10),
+      token
+    );
     return NextResponse.json(comments);
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 });

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { isAdmin } from '@/lib/utils';
+import { getAccessToken } from '@/lib/server-auth';
 
 const ALLOWED_TYPES = [
   'image/png',
@@ -28,11 +29,12 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Internal Server Error';
 }
 
-/** POST /api/upload — 上传图片（仅管理员） */
+/** POST /api/upload — 上传图片（仅管理员，以登录用户身份写入） */
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!isAdmin(session?.user?.login)) {
+    const token = await getAccessToken(request);
+    if (!token || !isAdmin(session?.user?.login)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -58,10 +60,9 @@ export async function POST(request: NextRequest) {
     }
 
     const repo = process.env.GITHUB_REPO;
-    const serverToken = process.env.GITHUB_TOKEN;
-    if (!repo || !serverToken) {
+    if (!repo) {
       return NextResponse.json(
-        { error: 'GitHub storage is not configured' },
+        { error: 'GITHUB_REPO is not configured' },
         { status: 500 }
       );
     }
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       method: 'PUT',
       headers: {
         Accept: 'application/vnd.github.v3+json',
-        Authorization: `Bearer ${serverToken}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
