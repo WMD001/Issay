@@ -8,3 +8,7 @@ export async function getAccessToken(request: NextRequest): Promise<string | und
   });
   return token?.accessToken;
 }
+/** 仅允许未登录访客使用的服务端只读 Token */
+export function getAnonymousReadToken(): string | undefined {
+  return process.env.GITHUB_TOKEN;
+}

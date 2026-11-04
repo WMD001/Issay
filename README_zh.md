@@ -46,7 +46,7 @@
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth App 客户端密钥 |
 | `NEXTAUTH_SECRET` | 随机密钥，可用 `openssl rand -base64 32` 生成 |
 | `NEXTAUTH_URL` | 站点地址，如 `http://localhost:3000` |
-| `GITHUB_TOKEN` | **可选。** PAT（Issues 读写、Contents 读写、Metadata 读取），用于提高读取限额或访问私有仓库；公开仓库不需要。 |
+| `GITHUB_TOKEN` | **可选。** PAT（Issues 读取），**仅用于未登录访客的读取**，以提高匿名限额或访问私有仓库；不会用于写操作。 |
 | `GITHUB_OWNER` | 站长的 GitHub 用户名（管理员） |
 | `GITHUB_REPO` | 数据仓库，格式为 **`owner/repo`** |
 

@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getPosts, searchPosts, createPost } from '@/lib/github';
 import { isAdmin } from '@/lib/utils';
-import { getAccessToken } from '@/lib/server-auth';
+import { getAccessToken, getAnonymousReadToken } from '@/lib/server-auth';
 
 interface CreatePostBody {
   title?: string;
@@ -26,20 +26,22 @@ export async function GET(request: NextRequest) {
     const session = await getServerSession(authOptions);
     const admin = isAdmin(session?.user?.login);
     const token = await getAccessToken(request);
+    const readToken =
+      token ?? (session?.user ? undefined : getAnonymousReadToken());
 
     if ((includeDraft || draftOnly) && !admin) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const result = keyword
-      ? await searchPosts(keyword, label, page, token)
+      ? await searchPosts(keyword, label, page, readToken)
       : await getPosts({
           page,
           perPage,
           includeDraft: includeDraft && admin,
           label,
           draftOnly: draftOnly && admin,
-          token,
+          token: readToken,
         });
 
     return NextResponse.json(result);

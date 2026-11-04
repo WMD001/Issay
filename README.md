@@ -46,7 +46,7 @@ A lightweight, Memos-style personal timeline: write quick notes, tag them, searc
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth App client secret |
 | `NEXTAUTH_SECRET` | Random secret, e.g. `openssl rand -base64 32` |
 | `NEXTAUTH_URL` | Site URL, e.g. `http://localhost:3000` |
-| `GITHUB_TOKEN` | **Optional.** PAT (Issues RW, Contents RW, Metadata Read) that raises read rate limits or allows private repositories. Not required for a public repository. |
+| `GITHUB_TOKEN` | **Optional.** PAT (Issues read) used **only for unauthenticated visitors' reads** to raise the anonymous rate limit or access a private repository. Never used for writes. |
 | `GITHUB_OWNER` | GitHub login of the site owner (admin) |
 | `GITHUB_REPO` | Data repository as **`owner/repo`** |
 

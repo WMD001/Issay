@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { getPost, updatePost, closePost, type UpdatePostInput } from '@/lib/github';
 import { isAdmin, extractCustomLabels } from '@/lib/utils';
-import { getAccessToken } from '@/lib/server-auth';
+import { getAccessToken, getAnonymousReadToken } from '@/lib/server-auth';
 
 interface UpdatePostBody {
   title?: string;
@@ -23,8 +23,11 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    const session = await getServerSession(authOptions);
     const token = await getAccessToken(request);
-    const post = await getPost(Number.parseInt(id, 10), token);
+    const readToken =
+      token ?? (session?.user ? undefined : getAnonymousReadToken());
+    const post = await getPost(Number.parseInt(id, 10), readToken);
     return NextResponse.json(post);
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 });

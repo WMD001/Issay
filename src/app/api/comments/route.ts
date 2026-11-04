@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import {
   getComments,
   createComment,
   addReaction,
   type ReactionContent,
 } from '@/lib/github';
-import { getAccessToken } from '@/lib/server-auth';
+import { getAccessToken, getAnonymousReadToken } from '@/lib/server-auth';
 
 const REACTION_CONTENTS: readonly ReactionContent[] = [
   '+1',
@@ -46,10 +48,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const session = await getServerSession(authOptions);
     const token = await getAccessToken(request);
+    const readToken =
+      token ?? (session?.user ? undefined : getAnonymousReadToken());
     const comments = await getComments(
       Number.parseInt(issueIdStr, 10),
-      token
+      readToken
     );
     return NextResponse.json(comments);
   } catch (error) {

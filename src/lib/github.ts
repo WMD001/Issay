@@ -64,28 +64,22 @@ interface GitHubSearchResult {
   items: GitHubIssue[];
 }
 
-/** 可选的服务端 GitHub Token（仅用于提高匿名读取限额或访问私有仓库） */
-function getServerToken(): string | undefined {
-  return process.env.GITHUB_TOKEN;
-}
-
 function getRepo(): string {
   const repo = process.env.GITHUB_REPO;
   if (!repo) throw new Error('GITHUB_REPO is not set');
   return repo;
 }
 
-/** 通用 GitHub API 请求 */
+/** 通用 GitHub API 请求（token 由调用方显式决定，不在此处读取环境变量） */
 async function githubFetch(
   endpoint: string,
   options: RequestInit = {},
   token?: string
 ): Promise<Response> {
-  const authToken = token ?? getServerToken();
   const headers = new Headers(options.headers);
   headers.set('Accept', 'application/vnd.github.v3+json');
-  if (authToken) {
-    headers.set('Authorization', `Bearer ${authToken}`);
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
   }
 
   const res = await fetch(`${GITHUB_API}${endpoint}`, {
@@ -102,6 +96,23 @@ async function githubFetch(
   }
 
   return res;
+}
+
+/** 只读：token 由调用方显式传入，不在数据层读取服务端 PAT */
+async function githubRead(endpoint: string, token?: string): Promise<Response> {
+  return githubFetch(endpoint, {}, token);
+}
+
+/** 写入：必须使用登录用户 token，禁止回落到服务端 PAT */
+async function githubWrite(
+  endpoint: string,
+  options: RequestInit,
+  token: string
+): Promise<Response> {
+  if (!token) {
+    throw new Error('User access token is required for write operations');
+  }
+  return githubFetch(endpoint, options, token);
 }
 
 function normalizeReactions(reactions?: GitHubReactions): Reactions {
@@ -145,11 +156,11 @@ function issueToPost(issue: GitHubIssue): Post {
   };
 }
 
-/** 确保标签存在，不存在时自动创建 */
-async function ensureLabels(labels: string[], token?: string): Promise<void> {
+/** 确保标签存在，不存在时自动创建（写流程，必须使用用户 token） */
+async function ensureLabels(labels: string[], token: string): Promise<void> {
   for (const name of labels) {
     try {
-      await githubFetch(
+      await githubWrite(
         `/repos/${getRepo()}/labels/${encodeURIComponent(name)}`,
         {},
         token
@@ -160,7 +171,7 @@ async function ensureLabels(labels: string[], token?: string): Promise<void> {
     }
 
     try {
-      await githubFetch(
+      await githubWrite(
         `/repos/${getRepo()}/labels`,
         {
           method: 'POST',
@@ -207,9 +218,8 @@ export async function getPosts(
   }
   const labelsParam = labelNames.map(name => encodeURIComponent(name)).join(',');
 
-  const res = await githubFetch(
+  const res = await githubRead(
     `/repos/${getRepo()}/issues?labels=${labelsParam}&state=open&sort=created&direction=desc&per_page=${safePerPage}&page=${safePage}`,
-    {},
     token
   );
 
@@ -236,7 +246,7 @@ export async function getPosts(
 
 /** 获取单条说说 */
 export async function getPost(id: number, token?: string): Promise<Post> {
-  const res = await githubFetch(`/repos/${getRepo()}/issues/${id}`, {}, token);
+  const res = await githubRead(`/repos/${getRepo()}/issues/${id}`, token);
   const issue = (await res.json()) as GitHubIssue;
   return issueToPost(issue);
 }
@@ -246,13 +256,13 @@ export async function createPost(
   title: string,
   body: string,
   labels: string[] = [],
-  token?: string
+  token: string
 ): Promise<Post> {
   const finalLabels = normalizeLabels(['shuoshuo', ...labels]);
   await ensureLabels(finalLabels, token);
 
   const fallbackTitle = body.split('\n')[0].trim().slice(0, 50) || '无标题';
-  const res = await githubFetch(
+  const res = await githubWrite(
     `/repos/${getRepo()}/issues`,
     {
       method: 'POST',
@@ -281,7 +291,7 @@ export interface UpdatePostInput {
 export async function updatePost(
   id: number,
   data: UpdatePostInput,
-  token?: string
+  token: string
 ): Promise<Post> {
   const payload: UpdatePostInput = { ...data };
   if (data.labels) {
@@ -289,7 +299,7 @@ export async function updatePost(
     await ensureLabels(payload.labels, token);
   }
 
-  const res = await githubFetch(
+  const res = await githubWrite(
     `/repos/${getRepo()}/issues/${id}`,
     {
       method: 'PATCH',
@@ -303,8 +313,8 @@ export async function updatePost(
 }
 
 /** 关闭说说（软删除） */
-export async function closePost(id: number, token?: string): Promise<void> {
-  await githubFetch(
+export async function closePost(id: number, token: string): Promise<void> {
+  await githubWrite(
     `/repos/${getRepo()}/issues/${id}`,
     {
       method: 'PATCH',
@@ -320,9 +330,8 @@ export async function getComments(
   issueId: number,
   token?: string
 ): Promise<Comment[]> {
-  const res = await githubFetch(
+  const res = await githubRead(
     `/repos/${getRepo()}/issues/${issueId}/comments?per_page=100`,
-    {},
     token
   );
   const comments = (await res.json()) as GitHubComment[];
@@ -343,9 +352,9 @@ export async function getComments(
 export async function createComment(
   issueId: number,
   body: string,
-  token?: string
+  token: string
 ): Promise<Comment> {
-  const res = await githubFetch(
+  const res = await githubWrite(
     `/repos/${getRepo()}/issues/${issueId}/comments`,
     {
       method: 'POST',
@@ -372,14 +381,14 @@ export async function createComment(
 export async function addReaction(
   targetId: number,
   content: ReactionContent,
-  token?: string,
+  token: string,
   isComment = false
 ): Promise<void> {
   const endpoint = isComment
     ? `/repos/${getRepo()}/issues/comments/${targetId}/reactions`
     : `/repos/${getRepo()}/issues/${targetId}/reactions`;
 
-  await githubFetch(
+  await githubWrite(
     endpoint,
     {
       method: 'POST',
@@ -392,9 +401,8 @@ export async function addReaction(
 
 /** 获取仓库所有标签 */
 export async function getLabels(token?: string): Promise<string[]> {
-  const res = await githubFetch(
+  const res = await githubRead(
     `/repos/${getRepo()}/labels?per_page=100`,
-    {},
     token
   );
   const labels = (await res.json()) as GitHubLabel[];
@@ -435,9 +443,8 @@ export async function searchPosts(
     : ' label:shuoshuo';
   const query = `${safeKeyword}${labelQuery} repo:${getRepo()} is:issue is:open`;
 
-  const res = await githubFetch(
+  const res = await githubRead(
     `/search/issues?q=${encodeURIComponent(query)}&sort=created&order=desc&per_page=${perPage}&page=${safePage}`,
-    {},
     token
   );
   const result = (await res.json()) as GitHubSearchResult;
