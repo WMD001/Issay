@@ -36,6 +36,10 @@ export interface Comment {
     avatarUrl: string;
   };
   reactions: Reactions;
+  replyTo?: {
+    id: number;
+    login: string;
+  };
 }
 
 export interface TimelineEntry {

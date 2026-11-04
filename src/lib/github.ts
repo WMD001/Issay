@@ -325,6 +325,41 @@ export async function closePost(id: number, token: string): Promise<void> {
   );
 }
 
+/** 回复标记：site 层用它构建评论与回复的层级关系，GitHub 原生页面不显示 */
+const REPLY_MARKER_PATTERN = /^<!--\s*issay-reply-to:(\d+)\s*-->\r?\n?/;
+const REPLY_QUOTE_PATTERN = /^> 回复 @(\S+)\r?\n(?:\r?\n)?/;
+
+function toComment(raw: GitHubComment): Comment {
+  let body = raw.body ?? '';
+  let replyTo: Comment['replyTo'];
+
+  const marker = body.match(REPLY_MARKER_PATTERN);
+  if (marker) {
+    const replyToId = Number.parseInt(marker[1], 10);
+    body = body.slice(marker[0].length);
+
+    const quote = body.match(REPLY_QUOTE_PATTERN);
+    if (quote) {
+      body = body.slice(quote[0].length);
+      replyTo = { id: replyToId, login: quote[1] };
+    } else {
+      replyTo = { id: replyToId, login: '' };
+    }
+  }
+
+  return {
+    id: raw.id,
+    body,
+    createdAt: raw.created_at,
+    author: {
+      login: raw.user.login,
+      avatarUrl: raw.user.avatar_url,
+    },
+    reactions: normalizeReactions(raw.reactions),
+    replyTo,
+  };
+}
+
 /** 获取说说的评论列表 */
 export async function getComments(
   issueId: number,
@@ -336,16 +371,7 @@ export async function getComments(
   );
   const comments = (await res.json()) as GitHubComment[];
 
-  return comments.map(comment => ({
-    id: comment.id,
-    body: comment.body ?? '',
-    createdAt: comment.created_at,
-    author: {
-      login: comment.user.login,
-      avatarUrl: comment.user.avatar_url,
-    },
-    reactions: normalizeReactions(comment.reactions),
-  }));
+  return comments.map(toComment);
 }
 
 /** 发表评论 */
@@ -365,16 +391,7 @@ export async function createComment(
   );
   const comment = (await res.json()) as GitHubComment;
 
-  return {
-    id: comment.id,
-    body: comment.body ?? '',
-    createdAt: comment.created_at,
-    author: {
-      login: comment.user.login,
-      avatarUrl: comment.user.avatar_url,
-    },
-    reactions: normalizeReactions(comment.reactions),
-  };
+  return toComment(comment);
 }
 
 /** 添加表情反应 */

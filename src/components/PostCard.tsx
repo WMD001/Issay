@@ -19,7 +19,7 @@ interface PostCardProps {
 export default function PostCard({ post, onUpdated, onDeleted }: PostCardProps) {
   const isAdmin = useAdmin();
   const [editing, setEditing] = useState(false);
-  const [showComments, setShowComments] = useState(false);
+  const [showComments, setShowComments] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [reactions, setReactions] = useState(post.reactions);
   const [commentCount, setCommentCount] = useState(post.commentCount);

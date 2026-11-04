@@ -23,6 +23,8 @@ const REACTION_CONTENTS: readonly ReactionContent[] = [
 interface CreateCommentBody {
   issueId?: number;
   body?: string;
+  replyToId?: number;
+  replyToLogin?: string;
 }
 
 interface ReactionBody {
@@ -70,7 +72,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { issueId, body } = (await request.json()) as CreateCommentBody;
+    const { issueId, body, replyToId, replyToLogin } =
+      (await request.json()) as CreateCommentBody;
     if (!issueId || !body?.trim()) {
       return NextResponse.json(
         { error: 'issueId and body are required' },
@@ -78,7 +81,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const comment = await createComment(issueId, body.trim(), token);
+    const replyPrefix =
+      replyToId && replyToLogin?.trim()
+        ? `<!-- issay-reply-to:${replyToId} -->\n> 回复 @${replyToLogin.trim()}\n\n`
+        : '';
+    const comment = await createComment(
+      issueId,
+      `${replyPrefix}${body.trim()}`,
+      token
+    );
     return NextResponse.json(comment, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
